@@ -97,7 +97,8 @@ function tick(now) {
     if (inst.mixer) inst.mixer.update(dt);
     if (inst.anchor && inst.holder) {
       // holder 与 anchor 同为 model 的子节点，用局部坐标即可（避免重复施加父变换）
-      inst.holder.position.copy(inst.anchor.position);
+      // holder 是 model 的直接子节点，已继承全部父变换；
+      // 不要在这里覆盖 position，否则会冲掉挂载时算好的脚底对齐偏移。
       // 由世界位移推断移动状态，无需 main.js 配合
       const e = inst.anchor.matrixWorld.elements;
       const x = e[12], z = e[14];
@@ -149,17 +150,29 @@ export function createAgentModel(a, opts = {}) {
   const glbName = AGENT_GLB[a.id];
   if (glbName) {
     loadModel(glbName).then((rec) => {
-      if (!rec) return;                       // 载入失败：保留程序化模型
+      if (!rec) { console.warn('[VALSTRIKE] agent GLB 未载入:', glbName); return; }
+      try {
       holder.clear();
 
       const clone = SkeletonUtils.clone(rec.scene);
-      const box = new T.Box3().setFromObject(clone);
-      const size = box.getSize(new T.Vector3());
-      const scale = size.y > 0.001 ? TARGET_HEIGHT / size.y : 1;
-      clone.scale.setScalar(scale);
-      const box2 = new T.Box3().setFromObject(clone);
-      clone.position.y -= box2.min.y;          // 脚踩 y=0
       holder.add(clone);
+
+      // 自动定姿：把最长轴（身高）转到 Y 轴上
+      let box = new T.Box3().setFromObject(clone);
+      let size = box.getSize(new T.Vector3());
+      if (size.z > size.y && size.z >= size.x) clone.rotation.x = -Math.PI / 2;
+      else if (size.x > size.y && size.x >= size.z) clone.rotation.z = Math.PI / 2;
+
+      // 归一化到 TARGET_HEIGHT
+      box = new T.Box3().setFromObject(clone);
+      size = box.getSize(new T.Vector3());
+      const longest = Math.max(size.x, size.y, size.z) || 1;
+      const scale = TARGET_HEIGHT / longest;
+      clone.scale.multiplyScalar(scale);
+
+      // 脚踩 y=0：偏移 holder，避免与父级变换打架
+      box = new T.Box3().setFromObject(clone);
+      holder.position.y = -box.min.y;
 
       inst.mixer = new T.AnimationMixer(clone);
       for (const clip of rec.clips) {
@@ -168,7 +181,18 @@ export function createAgentModel(a, opts = {}) {
       inst.play('idle');
       inst.ready = true;
 
-      model.traverse((o) => { if (o.isMesh) o.visible = false; });
+      // 只隐藏【程序化】网格；holder 里的真实模型必须保持可见
+      model.traverse((o) => {
+        if (!(o.isMesh || o.isSkinnedMesh)) return;
+        let p = o, mine = false;
+        while (p) { if (p === holder) { mine = true; break; } p = p.parent; }
+        if (!mine) o.visible = false;
+      });
+      console.log('[VALSTRIKE] 真实特工模型已挂载:', glbName, 'scale=', scale.toFixed(4));
+      } catch (e) {
+        console.error('[VALSTRIKE] 挂载真实模型失败，保留程序化模型:', e);
+        model.traverse((o) => { if (o.isMesh) o.visible = true; });
+      }
     });
   }
 
