@@ -112,11 +112,15 @@ function tick(now) {
 }
 
 export function createAgentModel(a, opts = {}) {
-  /* 1) 原程序化模型照常构建，main.js 会继续操作它的骨骼组 */
-  const model = createProceduralModel(a, opts);
+  /* 1) 原程序化实现照常构建。
+     关键：它返回的是 {model, ...} 而不是 Group（和 weapon-art.js 同一约定），
+     所以必须原样返回，只把真实模型挂到 proc.model 上。 */
+  const proc = createProceduralModel(a, opts);
+  const model = (proc && proc.model) ? proc.model : proc;
+  if (!model || typeof model.add !== 'function') return proc;
 
   /* 2) 找到挂点：原模型的第一个子组 */
-  const anchor = model.children.find((c) => c.isGroup) || model;
+  const anchor = (model.children && model.children.find((c) => c.isGroup)) || model;
 
   const holder = new T.Group();
   holder.name = 'glb-agent';
@@ -172,10 +176,10 @@ export function createAgentModel(a, opts = {}) {
   model.userData.play = inst.play;
   model.userData.isRealModel = true;
 
-  live.add(inst);
+live.add(inst);
   if (!rafId) { last = performance.now(); rafId = requestAnimationFrame(tick); }
 
-  return model;
+  return proc;
 }
 
 /** 可选的外部驱动入口；不调用也可以，内部 rAF 已在跑。 */
