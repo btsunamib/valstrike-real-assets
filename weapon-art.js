@@ -15,6 +15,7 @@ import * as T from './three.module.js';
 import * as SkeletonUtils from './utils/SkeletonUtils.js';
 import { GLTFLoader } from './loaders/GLTFLoader.js';
 import { createWeaponArt as createProceduralWeaponArt } from './weapon-art-proc.js';
+import { playSkinCue, applySkinMaterials } from './skins-valstrike.js';
 
 /* 调参入口 */
 const TARGET_LENGTH = 0.62;      // 归一化后最长边（weaponGroup 空间）
@@ -107,7 +108,7 @@ export function createWeaponArt(id, s, knifeType, showcase, variant, mercyVarian
   art.model.add(holder);
 
   const inst = {
-    art, holder, mixer: null, actions: {}, current: null, state: 'idle', _flashing: false,
+    art, id, holder, mixer: null, actions: {}, current: null, state: 'idle', _flashing: false,
   };
 
   inst.play = (state, o = {}) => {
@@ -148,6 +149,7 @@ export function createWeaponArt(id, s, knifeType, showcase, variant, mercyVarian
     clone.position.sub(c);                  // 居中到 holder 原点
 
     holder.add(clone);
+    applySkinMaterials(id, clone);
 
     inst.mixer = new T.AnimationMixer(clone);
     for (const clip of rec.clips) inst.actions[clip.name] = inst.mixer.clipAction(clip);
@@ -166,7 +168,7 @@ export function createWeaponArt(id, s, knifeType, showcase, variant, mercyVarian
     if (!inst.mixer) return;
     const eq = state && state.equipSeconds;
     if (eq != null && eq < 0.45) {
-      if (inst.state !== 'draw') inst.play('draw', { once: true, restart: true });
+      if (inst.state !== 'draw') { inst.play('draw', { once: true, restart: true }); playSkinCue(id, 'equip', 0.45); }
     } else if (eq != null && eq >= 0.45 && inst.state === 'draw') {
       inst.play('idle');
     }
